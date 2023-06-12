@@ -1,0 +1,701 @@
+---
+title: "STA141A Quarter Project"
+author: "Jason Javier"
+date: "2023-04-23"
+output: html_document
+---
+
+ABSTRACT:
+
+This project aims to explore and analyze neural activities among mice in an experiment conducted by Steinmetz in 2019, focusing on the behavior of neurons in the visual cortex. In the experiment, 10 mice over 39 sessions were involved in which visual stimuli were presented to the mice, and their neural activity was recorded. The mice were trained to make decisions based on stimuli, and feedback in the form of penalties or rewards were provided. In my particular analysis, we will focus on session 1 to 18, with the four mice: Cori, Frossman, Hence, and Lederberg. The analysis involved creating a data frame to organize the trial information across sessions and calculating the average spikes per neuron. All in all, the findings indicate that lower neuron firing spike count is correlated with improved feedback and success rate. This is supported by boxplots displaying the relationship between spike count and feedback results, as well as from the prediction models created. Future work to improve this analysis would involve refining the data integration approach, optimizing predictive models, and further analyzing other factors behind observed correlations between neuron firing and behavioral outcomes.
+
+
+INTRODUCTION:
+
+This project was created in hopes to further explore the neural activities among mice from an experiment conducted by Steinmetz in 2019. In it, the researchers performed experiments on 10 mice over 39 sessions to investigate the behavior of neurons in the mice's visual cortex. Each session consisted of multiple trials where visual stimuli were presented to the mice on two screens positioned on both sides of them. The stimuli varied in contrast levels, ranging from no stimulus (contrast level 0) to high contrast (contrast level 1).The mice were trained to make decisions based on these visual stimuli using a wheel controlled by their forepaws. The researchers provided feedback in the form of rewards or penalties based on the mice's decisions. The specific rules for successful decisions depended on the relative contrast levels of the stimuli on the two screens. For example, if the left screen had higher contrast than the right screen, the mice had to turn the wheel to the right to achieve a successful outcome. If the right screen had higher contrast, they had to turn the wheel to the left. During the trials, the activity of neurons in the mice's visual cortex was recorded as spike trains, which are collections of timestamps corresponding to neuron firing. The researchers focused on the spike trains recorded from the onset of the stimuli to 0.4 seconds after the onset. For our analysis, we will look at Sessions 1 to 18 involving: Cori, Frossman, Hence, and Lederberg. Overall, with the results presented, it is fair to say that having a lower average neuron firing spike count results in better feedback results, and eventually higher success rate
+
+BACKGROUND:
+
+The source of the data stems from an experiment conducted by Steinmetz in 2019. The researchers performed experiments on 10 mice over 39 sessions to investigate neural activity in the mice's visual cortex. There are five variables for each trial. Feedback_type is the type of feedback, 1 is a success and -1 is a failure. contrast_left is contrast of the left stimulus. contrast_right is contrast of the right stimulus. time is the centers of the time bins for spks (in seconds). spks is the number of spikes of neurons in the visual cortex in time bins defined in time (seconds). Lastly brain_area denotes the area of the brain where the unique neurons live in.
+
+
+
+```{r, echo=FALSE}
+
+library(ggplot2)
+library(dplyr)
+
+# Reads info
+
+session=list()
+for(i in 1:18){
+  session[[i]]=readRDS(paste('./Data/session',i,'.rds',sep=''))
+   print(session[[i]]$mouse_name)
+   print(session[[i]]$date_exp)
+  
+}
+
+
+```
+
+```{r, echo=FALSE}
+# Summarize the information across sessions:
+# Knowing what summary we want to report, we can create a tibble:
+# All values in this function serve only as place holders
+library(tidyverse) 
+library(magrittr)   
+library(knitr) 
+library(dplyr)  
+number.session=length(session)
+
+# in library tidyverse
+
+data.table <- tibble(
+  mouse_name = rep('name',number.session),
+  date_exp =rep('dt',number.session),
+  n_brain_area = rep(0,number.session),
+  n_neurons = rep(0,number.session),
+  n_trials = rep(0,number.session),
+  success_rate = rep(0,number.session)
+)
+
+
+for(i in 1:number.session){
+  tmp = session[[i]];
+  data.table[i,1]=tmp$mouse_name;
+  data.table[i,2]=tmp$date_exp;
+  data.table[i,3]=length(unique(tmp$brain_area));
+  data.table[i,4]=dim(tmp$spks[[1]])[1];
+  data.table[i,5]=length(tmp$feedback_type);
+  data.table[i,6]=mean(tmp$feedback_type+1)/2;
+  
+}
+
+head(data.table)
+
+
+```
+
+We have created a tibble (data frame) that holds the most important information regarding the data structures of the many sessions. Each row holds one session's information. Mouse_name and date_exp are the names of the mice and date of the experiment respectively.n_brain_area is the unique brain area's activated. n_neurons is the number of neurons, n_trials is the number of trials, and success_rate is the ratio of successful trials to total number of trials.
+
+
+Part 1 (ii + iii):
+In the context of this data set, neural activity can be denoted as patterns of electrical and biochemical events within neurons that are associated with different aspects of perpetual decision-making, action selection, and engagement in a task. Furthermore, the original experiment also notes how neural activity can be traced to multiple parts of the brain being stimulated at once, rather than just one part of the brain
+
+```{r, echo=FALSE}
+calculate_trial_summary <- function(session_num, trial_num) {
+  spk.trial <- session[[session_num]]$spks[[trial_num]]
+  area <- session[[session_num]]$brain_area
+  
+  # Calculate the number of spikes for each neuron during this trial
+  spk.count <- apply(spk.trial, 1, sum)
+  
+  spk.average.tapply <- tapply(spk.count, area, mean)
+  
+  tmp <- data.frame(
+    area = area,
+    spikes = spk.count
+  )
+  
+  # Calculate the average by group using dplyr
+  spk.average.dplyr <- tmp %>%
+    group_by(area) %>%
+    summarize(mean = mean(spikes))
+  
+  average_spike_area<-function(i.t,this_session){
+  spk.trial = this_session$spks[[i.t]]
+  area= this_session$brain_area
+  spk.count=apply(spk.trial,1,sum)
+  spk.average.tapply=tapply(spk.count, area, mean)
+  return(spk.average.tapply)
+  }
+  
+  n.trial <- length(session[[session_num]]$feedback_type)
+  n.area <- length(unique(session[[session_num]]$brain_area))
+  
+  trial.summary <- matrix(nrow = n.trial, ncol = n.area + 1 + 2 + 1)
+  
+  for (i.t in 1:n.trial) {
+    trial.summary[i.t, ] <- c(average_spike_area(i.t, this_session = session[[session_num]]),
+                              session[[session_num]]$feedback_type[i.t],
+                              session[[session_num]]$contrast_left[i.t],
+                              session[[session_num]]$contrast_right[i.t],
+                              i.t)
+  }
+  
+  colnames(trial.summary) <- c(names(average_spike_area(i.t, this_session = session[[session_num]])), 
+                               'feedback', 'left contr.', 'right contr.', 'id')
+  
+  # Convert trial.summary into a tibble
+  trial.summary <- as_tibble(trial.summary)
+  
+  trial_summary <- cbind(trial.summary, session_num = session_num)
+  
+  return(trial_summary)
+}
+```
+
+```{r, echo=FALSE}
+trial_summary <- calculate_trial_summary(6,1)
+head(trial_summary)
+```
+```{r}
+
+plot_trial_summary <- function(trial_summary, session_num) {
+  n.trial <- nrow(trial_summary)
+  n.area <- ncol(trial_summary) - 5
+  
+  area.col <- rainbow(n = n.area, alpha = 0.7)
+  
+  # Initiate a blank plot
+  plot(x = 1, y = 0, col = 'white', xlim = c(0, n.trial), ylim = c(0.5, 2.2),
+       xlab = "Trials", ylab = "Average spike counts",
+       main = paste("Spikes per area in Session", session_num))
+  
+  for (i in 1:n.area) {
+    lines(y = trial_summary[[i]], x = trial_summary$id, col = area.col[i], lty = 2, lwd = 1)
+    lines(smooth.spline(trial_summary$id, trial_summary[[i]]), col = area.col[i], lwd = 3)
+  }
+  
+  legend("topright", 
+         legend = colnames(trial_summary)[1:n.area], 
+         col = area.col, 
+         lty = 1, 
+         cex = 0.8
+  )
+}
+
+plot_trial_summary(trial_summary,session_num = 6)
+```
+<p style="text-align: center;">**Figure 1**. Average spike count across trials in session 6.</p>
+
+Table 1 displays the average spike count across trials in Session 6. From the graph alone we can see how CA1 is the most active brain region with a rough average of 1.5 spikes across the trials. The only one that comes close afterwards is root with an average spike count of approximately 0.9 to 0.6. The rest of the brain regions within this session do not come remotely close. As it currently stands now, CA1 seems like the most active brain region within session 6. To confirm we will take a deeper look deeper across trial 1 and trial 5 using a raster plot.
+
+```{r, echo=FALSE}
+
+# Temp. putting this here for clarity
+
+i.s = 6
+
+plot.trial<-function(i.t,area, area.col,this_session){
+    n.trial <- nrow(trial_summary)
+    n.area <- ncol(trial_summary) - 5
+    area.col <- rainbow(n = n.area, alpha = 0.7)
+    spks=this_session$spks[[i.t]];
+    n.neuron=dim(spks)[1]
+    time.points=this_session$time[[i.t]]
+    
+    plot(0,0,xlim=c(min(time.points),max(time.points)),ylim=c(0,n.neuron+1),col='white', xlab='Time (s)',yaxt='n', ylab='Neuron', main=paste('Trial ',i.t, 'feedback', this_session$feedback_type[i.t] ),cex.lab=1.5)
+    for(i in 1:n.neuron){
+        i.a=which(area== this_session$brain_area[i]);
+        col.this=area.col[i.a]
+        
+        ids.spike=which(spks[i,]>0) # find out when there are spikes 
+        if( length(ids.spike)>0 ){
+            points(x=time.points[ids.spike],y=rep(i, length(ids.spike) ),pch='.',cex=2, col=col.this)
+        }
+      
+            
+    }
+    
+legend("topright", 
+  legend = area, 
+  col = area.col, 
+  pch = 16, 
+  cex = 0.8
+  )
+  }
+```
+
+```{r, echo=FALSE}
+varname=names(trial_summary);
+area=varname[1:(length(varname)-5)]
+plot.trial(1,area, area.col,session[[6]])
+```
+<p style="text-align: center;">**Figure 2**. Rasterplot for Session 6 Trial 1.</p>
+
+```{r, echo=FALSE}
+varname=names(trial_summary);
+area=varname[1:(length(varname)-5)]
+par(mfrow=c(1,2))
+plot.trial(1,area, area.col,session[[6]])
+plot.trial(5,area, area.col,session[[6]])
+```
+<p style="text-align: center;">**Figure 3 and 4**. Comparison of raster plots between Trial 1 and Trial 5.</p>
+
+To clarify, raster plots are typically used in neuroscience to represent neural activity. It is particularly useful for analyzing for analyzing and understanding temporal patterns of individual or groups of neurons in response to stimuli. Each row in the plot corresponds to the activity of a single neuron,and multiple rows stacked together represent the activity of different neurons. In reference to our analysis, we can see how Root are stacked together, representing lots of activity in that region. When we compare the line graph to the raster plot, CA1 has more average spike counts, while Root has more neurons stacked in close proximity to each other being activated.
+
+Part 1 (iv):
+
+To extend my analysis from part ii and iii, our table from before details how Session 2 and Session 6 have relatively similar statistics in regards to the number of brain regions being stimulated, how many neurons are activating, and number of trials. However, the mouse from session 6 has an almost 10% increase in success rate versus that of Session 2.
+
+```{r, echo=FALSE}
+
+trial_summary <- calculate_trial_summary(2,1)
+trial_summary2 <- calculate_trial_summary(6,1)
+
+head(trial_summary)
+head(trial_summary2)
+
+```
+
+
+
+```{r, echo=FALSE}
+plot_trial_summary(trial_summary,session_num = 2)
+plot_trial_summary(trial_summary2,session_num = 6)
+```
+<p style="text-align: center;">**Figure 5 and 6**. Average spike count across trials in session 2 and session 6 respectively.</p>
+
+Now, let's take a look at the success rate among all mice across sessions, and particularly take notice of the mice from session 2 and 6.
+
+```{r, echo=FALSE}
+
+#data.table$mouse_names holds the appropriate mouse names...
+
+# Load required libraries
+library(tidyverse)
+library(ggplot2)
+
+# Assuming you have a data.frame named 'data.table' with the necessary columns
+
+# Convert mouse_name column to a factor for color mapping
+data.table$mouse_name <- as.factor(data.table$mouse_name)
+
+# Generate the line graph
+ggplot(data = data.table, aes(x = 1:number.session, y = success_rate, group = mouse_name, color = mouse_name)) +
+  geom_line() +
+  labs(x = "Number of Sessions", y = "Success Rate") +
+  scale_color_manual(values = rainbow(length(levels(data.table$mouse_name))))  # Change line colors based on mouse_name
+
+```
+<p style="text-align: center;">**Figure 7**. Success Rate of Mice across all sessions.</p>
+```{r, echo=FALSE}
+# Load required libraries
+library(tidyverse)
+library(ggplot2)
+
+# Assuming you have a data.frame named 'data.table' with the necessary columns
+
+# Convert mouse_name column to a factor for color mapping
+data.table$mouse_name <- as.factor(data.table$mouse_name)
+
+# Boxplot: number of sessions vs n_neurons (colored by mouse_name)
+ggplot(data = data.table, aes(x = 1:number.session, y = n_neurons, fill = mouse_name)) +
+  geom_boxplot() +
+  labs(x = "Number of Sessions", y = "Number of Neurons") +
+  scale_fill_discrete(name = "Mouse Name") +
+  ggtitle("Boxplot: Number of Sessions vs Number of Neurons")
+
+# Boxplot: number of sessions vs success_rate (colored by mouse_name)
+ggplot(data = data.table, aes(x = 1:number.session, y = success_rate, fill = mouse_name)) +
+  geom_boxplot() +
+  labs(x = "Number of Sessions", y = "Success Rate") +
+  scale_fill_discrete(name = "Mouse Name") +
+  ggtitle("Boxplot: Number of Sessions vs Success Rate")
+```
+<p style="text-align: center;">**Figure 8 and 9**. Box plots to detail the 5 number summary for number of neurons and success rate.</p>
+
+Here we use a line graph to compare the success rate of mice across all sessions, followed by 2 box plots detailing the 5 number summary for number of neurons and success rate. When comparing some of the results of number of neurons in contrast to success rate, it is interesting to note how certain mice will have a lower average, yet higher success rate. Take for the purple plot, Lederberg. Lederberg has the lowest neurons, and despite this has the highest success rate. On the other hand, Forssmann has the highest number of neurons on average, while having the second lowest success rate on average. Perhaps when we predict for feedback rate in part 3, we can expect the most successful participant to be Lederberg due to him having the success rate. It could be potentially that having lower amount of neurons being activated followed by having the most sessions will lend you to being the most successful mouse.
+
+Part 2:
+
+```{r, echo=FALSE}
+library(dplyr)
+library(tidyr)
+
+
+data.integration <- data.frame()
+
+# Iterate over each session in the session list
+for (i in 1:length(session)) {
+  current_session <- session[[i]]  # Access the current session
+  
+  
+  # Create a temporary data frame for the current session's variables
+  temp_df <- tibble(
+    session = rep(paste("Session", i), length(current_session$feedback_type)),
+    contrast_left = current_session$contrast_left,
+    contrast_right = current_session$contrast_right,
+    feedback_type = current_session$feedback_type,
+    mouse_name = current_session$mouse_name,
+    #brain_areas = rep(brain_areas, length(session[[i]]$feedback_type)),
+    date_exp = current_session$date_exp)
+  
+  avg_spikes_per_trial <- c()
+
+
+  for (x in 1:length(session[[i]]$feedback_type)){
+    avg_spikes_per_trial = c(avg_spikes_per_trial, mean(apply(session[[i]]$spks[[x]], MARGIN = 1, FUN = sum)))
+  }
+  
+  temp_df <- cbind(temp_df, avg_spikes_per_neuron = avg_spikes_per_trial)
+  
+  # Append the temporary data frame to the data.integration data frame
+  data.integration <- bind_rows(data.integration, temp_df)
+  
+}
+
+head(na.omit(data.integration))
+
+data.integration$contrast_left <- data.integration$contrast_left[, 1] 
+data.integration$contrast_right <- data.integration$contrast_right[, 1]
+data.integration$feedback_type <- data.integration$feedback_type[, 1]
+
+
+```
+
+
+For part 2: Data Integration, we create a large data frame holding the most important variables. We have session, contrast_left, contrast_right, feedback_type, brain_area, date_exp, and avg_spikes_per_neuron. The first 6 variables have already been explained in previous parts. avg_spikes_per_neuron denotes the average spikes per neuron per trial. We will be using avg_spikes_per_neuron later on in part 3 for our predictive model. It will be included in our models when we compare and predict for feedback_type.
+
+
+Part 3: Now, we begin creating our prediction models. For my analysis, I opted to use Logistic Regression followed by Decision Tree as the two models. I chose Logistic Regression since it will provide a clear understanding of the relationship between neuronal activities and feedback types, followed by the assumption that there is a linear relationship between the two. Decision Tree was chosen in case there is not a linear relationship between neuronal activities and feedback types, as well as see if there is strong evidence of interaction effects among the neuronal activities in predicting feedback types.
+
+Starting off with Logistic Regression, our results are as follows: precision is approximately 73%, recall is 96%, f1 is approximately 83%, and our misclassification error rate is approximately 28%. Precision denotes the proportion of correctly predicted positive instances out of the total instances predicted as positive. In our case, when the model predicts a positive feedback type, it is likely to be correct.In our case, when the model predicts a positive feedback type, it is right 73% of the time. Recall measures the proportion of correctly predicted positive instances out of all actual positive instances. In regards to our findings, a high recall indicates that the model can effectively identify positive feedback types and avoid false negatives. We have this at a 96%. F1 score is the mean of precision and recall. A high F1 rate details that the model performs well in prediciting positive feedback types and avoiding misclassifications. We find this to be 83%. Lastly misclassification error rate is a general measure of how good the model is. The lower the number, the better.
+
+```{r, echo=FALSE}
+
+# Logistic Regression
+
+# Encoding the target feature as factor
+data.integration$feedback_type = factor(data.integration$feedback_type, levels = c(-1,1))
+
+# Splitting the dataset into the Training set and Test set
+# install.packages('caTools')
+library(caTools)
+set.seed(123)
+split = sample.split(data.integration$feedback_type, SplitRatio = 0.75)
+training_set = subset(data.integration, split == TRUE)
+test_set = subset(data.integration, split == FALSE)
+
+# Fitting Logistic Regression to the Training set
+classifier = glm(formula = feedback_type ~ .,
+                 family = binomial,
+                 data = training_set)
+
+# Predicting the Test set results
+prob_pred = predict(classifier, type = 'response', newdata = test_set[-4])
+y_pred = ifelse(prob_pred > 0.5, 1, -1)
+
+# Making the Confusion Matrix
+cm = table(test_set[, 4], y_pred)
+print(cm)
+
+precision <- sum(y_pred == 1 & test_set[, 4] == 1) / sum(y_pred == 1)
+precision
+
+recall <- sum(y_pred == 1 & test_set[, 4] == 1) / sum(test_set[, 4] == 1)
+recall
+
+f1 <- 2* precision * recall / (precision + recall)
+f1
+
+misclassification_rate <- sum(test_set[, 4] != y_pred) / nrow(test_set)
+print(paste("Misclassification Error Rate:",misclassification_rate))
+
+
+```
+
+
+
+```{r, echo=FALSE}
+
+# Decision Tree
+
+library(rpart)
+
+classifier = rpart(formula = feedback_type ~ .,
+                    data = training_set)
+
+# Predicting the Test set Results
+
+y_pred = predict(classifier, newdata = test_set[-4], type = 'class')
+
+# Making the Confusion Matrix
+cm = table(test_set[, 4], y_pred)
+print(cm)
+
+precision <- sum(y_pred == 1 & test_set[, 4] == 1) / sum(y_pred == 1)
+precision
+
+recall <- sum(y_pred == 1 & test_set[, 4] == 1) / sum(test_set[, 4] == 1)
+recall
+
+f1 <- 2* precision * recall / (precision + recall)
+f1
+
+#misclassification_rate <- sum(test_set[, 4] != y_pred) / nrow(test_set)
+#print(paste("Misclassification Error Rate:",misclassification_rate))
+# 0.291952894995093
+
+# Calculating Misclassification Rate
+misclassification_rate <- (cm[1, 2] + cm[2, 1]) / sum(cm)
+misclassification_rate
+
+```
+Now we will summarise the results of our Decision Tree on the training data. Precision is 71%, recall is 100%, f1 is 83%, and misclassification error rate is 29%. One thing to note is how recall is at 100%. While extremely high, this is not entirely absurd. This 100% could be because the data set used for training has a clear separation between the positive and negative feedback types, leading to the decision tree to accurately classify instances and have a higher recall. Or it could be that the test set used for evaluation might have similar patterns and use characteristics as the training set, resulting in the decision tree model to generalize well.
+
+Now we will begin testing our prediction models with the testing data given by the instructors. We begin by converting test1 data into a suitable date frame that we can manipulate. We add the appropriate variables, and make sure that we convert feedback types as factors. We then apply this to Logistic Regression.
+
+```{r, echo=FALSE}
+
+# Converting testing1 into a dataframe
+
+testing1 <- readRDS("test1.rds")
+
+n_rows <- nrow(testing1) 
+
+testing_df <- data.frame(contrast_left = testing1$contrast_left,
+                         contrast_right = testing1$contrast_right,
+                         feedback_type = testing1$feedback_type,
+                         mouse_name = rep(testing1$mouse_name, each = n_rows),
+                         date_exp = rep(testing1$date_exp, each = n_rows)
+                         )
+
+avg_spikes_per_trial <- c()
+
+
+  for (x in 1:100){
+    avg_spikes_per_trial = c(avg_spikes_per_trial, mean(apply(testing1$spks[[x]], MARGIN = 1, FUN = sum)))
+  }
+
+testing_df <- cbind(testing_df, avg_spikes_per_neuron = avg_spikes_per_trial)
+
+testing_df$feedback_type = factor(testing_df$feedback_type, levels = c(-1,1))
+
+head(testing_df)
+
+```
+
+
+```{r, echo=FALSE}
+
+# Performing Logistic Regression on Test 1
+
+# Logistic Regression
+
+# Encoding the target feature as factor
+data.integration$feedback_type = factor(data.integration$feedback_type, levels = c(-1, 1))
+
+# Splitting the dataset into the Training set and Test set
+library(caTools)
+set.seed(123)
+split <- sample.split(data.integration$feedback_type, SplitRatio = 0.75)
+training_set <- subset(data.integration, split == TRUE, select = -session)
+#training_set <- training_set[-1]
+test_set <- testing_df  # Use testing_df as the test set
+
+
+# Fitting Logistic Regression to the Training set
+classifier <- glm(formula = feedback_type ~ .,
+                  family = binomial,
+                  data = training_set)
+
+# Predicting the Test set results
+prob_pred <- predict(classifier, type = 'response', newdata = test_set)
+y_pred <- ifelse(prob_pred > 0.5, 1, -1)
+
+# Making the Confusion Matrix
+cm <- table(test_set$feedback_type, y_pred)
+print(cm)
+
+precision <- sum(y_pred == 1 & test_set$feedback_type == 1) / sum(y_pred == 1)
+precision
+
+recall <- sum(y_pred == 1 & test_set$feedback_type == 1) / sum(test_set$feedback_type == 1)
+recall
+
+f1 <- 2 * precision * recall / (precision + recall)
+f1
+
+misclassification_rate <- sum(test_set$feedback_type != y_pred) / nrow(test_set)
+print(paste("Misclassification Error Rate:", misclassification_rate))
+
+```
+
+Now we replace the test data from the benchmark test and instead insert the appropriate testing data provided. Our results are as follows: Precision is 89%, recall is 68%, f1 is 77% and misclassification error rate is 29%. This relatively matches up with our benchmark, detailing that our model's quality is relatively similar it.
+
+Similar to test data 1, we will convert test data 2 into a data frame that we can manipulate, add the appropriate variables, and make sure we convert feedback types as factors.
+
+```{r, echo=FALSE}
+testing2 <- readRDS("test2.rds")
+
+n_rows2 <- nrow(testing2)
+
+testing_df2 <- data.frame(contrast_left = testing1$contrast_left,
+                         contrast_right = testing1$contrast_right,
+                         feedback_type = testing1$feedback_type,
+                         mouse_name = rep(testing1$mouse_name, each = n_rows2),
+                         date_exp = rep(testing1$date_exp, each = n_rows2)
+                         )
+
+avg_spikes_per_trial <- c()
+
+
+  for (x in 1:100){
+    avg_spikes_per_trial = c(avg_spikes_per_trial, mean(apply(testing2$spks[[x]], MARGIN = 1, FUN = sum)))
+  }
+
+testing_df2$feedback_type = factor(testing_df2$feedback_type, levels = c(-1,1))
+
+testing_df2 <- cbind(testing_df2, avg_spikes_per_neuron = avg_spikes_per_trial)
+
+head(testing_df2)
+
+```
+
+
+```{r, echo=FALSE}
+# Performing Logistic Regression on Test 2
+
+# Logistic Regression
+
+unique(data.integration$feedback_type)
+
+# Encoding the target feature as factor
+data.integration$feedback_type = factor(data.integration$feedback_type, levels = c(-1, 1))
+
+# Splitting the dataset into the Training set and Test set
+library(caTools)
+set.seed(123)
+split <- sample.split(data.integration$feedback_type, SplitRatio = 0.75)
+training_set <- subset(data.integration, split == TRUE, select = -session)
+#training_set <- training_set[-1]
+test_set <- testing_df2  # Use testing_df as the test set
+
+
+# Fitting Logistic Regression to the Training set
+classifier <- glm(formula = feedback_type ~ .,
+                  family = binomial,
+                  data = training_set)
+
+# Predicting the Test set results
+prob_pred <- predict(classifier, type = 'response', newdata = test_set)
+y_pred <- ifelse(prob_pred > 0.5, 1, -1)
+
+# Making the Confusion Matrix
+cm <- table(test_set$feedback_type, y_pred)
+print(cm)
+
+precision <- sum(y_pred == 1 & test_set$feedback_type == 1) / sum(y_pred == 1)
+precision
+
+recall <- sum(y_pred == 1 & test_set$feedback_type == 1) / sum(test_set$feedback_type == 1)
+recall
+
+f1 <- 2 * precision * recall / (precision + recall)
+f1
+
+misclassification_rate <- sum(test_set$feedback_type != y_pred) / nrow(test_set)
+print(paste("Misclassification Error Rate:", misclassification_rate))
+
+```
+These are our results of our Logistic Regression model when fed test data 2. Precision is 100%, recall is 3%, f1 is 5%, and misclassification error rate is 70%. It's clear to see that the results were far from what we want, with the misclassification error rate holding a boisterous 70%, and thus an extremely inaccurate model.
+
+Now we will apply test data 1 and 2 to our Decision Tree model.
+
+```{r, echo=FALSE}
+
+# Performing Decision Tree on Test 1 
+
+library(rpart)
+
+training_set <- subset(data.integration, split == TRUE, select = -session)
+test_set <- testing_df
+
+
+classifier = rpart(formula = feedback_type ~ .,
+                    data = training_set)
+
+#plot(classifier)
+#text(classifier)
+# Predicting the Test set Results
+
+y_pred = predict(classifier, newdata = test_set[-3], type = 'class')
+
+# Making the Confusion Matrix
+cm = table(test_set[, 3], y_pred)
+print(cm)
+
+precision <- sum(y_pred == 1 & test_set[, 3] == 1) / sum(y_pred == 1)
+precision
+
+recall <- sum(y_pred == 1 & test_set[, 3] == 1) / sum(test_set[, 3] == 1)
+recall
+
+f1 <- 2* precision * recall / (precision + recall)
+f1
+
+#misclassification_rate <- sum(test_set[, 4] != y_pred) / nrow(test_set)
+#print(paste("Misclassification Error Rate:",misclassification_rate))
+# 0.291952894995093
+
+# Calculating Misclassification Rate
+misclassification_rate <- (cm[1, 2] + cm[2, 1]) / sum(cm)
+misclassification_rate
+
+```
+
+For test data 1, our Decision Tree results are as follows: Precision is 72%, recall is 100%, f1 is 84%, and misclassification error rate is 28%.
+
+
+```{r, echo=FALSE}
+# Performing Decision Tree on Test 2 
+
+library(rpart)
+
+training_set <- subset(data.integration, split == TRUE, select = -session)
+test_set2 <- testing_df2
+
+classifier = rpart(formula = feedback_type ~ .,
+                    data = training_set)
+
+# Predicting the Test set Results
+
+y_pred = predict(classifier, newdata = test_set2[-3], type = 'class')
+
+# Making the Confusion Matrix
+cm = table(test_set2[, 3], y_pred)
+print(cm)
+
+precision <- sum(y_pred == 1 & test_set2[, 3] == 1) / sum(y_pred == 1)
+precision
+
+recall <- sum(y_pred == 1 & test_set2[, 3] == 1) / sum(test_set2[, 3] == 1)
+recall
+
+f1 <- 2* precision * recall / (precision + recall)
+f1
+
+#misclassification_rate <- sum(test_set[, 4] != y_pred) / nrow(test_set)
+#print(paste("Misclassification Error Rate:",misclassification_rate))
+# 0.291952894995093
+
+# Calculating Misclassification Rate
+misclassification_rate <- (cm[1, 2] + cm[2, 1]) / sum(cm)
+misclassification_rate
+
+```
+
+For test data 2, our Decision Tree results are as follows: Precision is 72%, recall is 100%, f1 is 84%, and misclassification error rate is 28%. These are the exact same results as the Decision Tree when test data 1 was applied.
+
+
+Conclusion:
+
+Firstly I would like to address some of the shortfalls of the analysis and what I would do to improve upon it if given the opportunity to fix. Firstly, it would have been much more beneficial a more sophisticated method for data integration, as it stands for now, I simply just created a data frame holding information per trial, across all sessions, with one additional column of average spikes per neuron. Another issue stemmed from the results of my Logistic Regression model when given test 2 data, as I resulted in a very unfavorable misclassification rate. There are a variety of possible solutions, such as removing features that are unusable, modify features into ones that provide better predictive power, use methods/techniques to avoid over fitting, etc. The last short coming of note is in regards to what happened to my results of my Decision Tree when test data 2 was applied. The results ended up being the same as that of test data 1. To fix this I would have to better examine my data frames regarding both the testing and training data in order to deduce the reason on why I receive the same results.
+
+Overall, with the results presented, it is fair to say that having a lower average neuron firing spike count results in better feedback results, and eventually higher success rate. This is evident namely by the boxplots created in part 1 section iv, (with Lederberg leading the charge), as well as our prediction models from section 3.
+
+# Reference {-}
+
+
+Steinmetz, N.A., Zatka-Haas, P., Carandini, M. et al. Distributed coding of choice, action and engagement across the mouse brain. Nature 576, 266–273 (2019). https://doi.org/10.1038/s41586-019-1787-x
+
+## Acknowledgement {-}
+
+Marvin Lau and Samantha Isabel Zaraspe for their discussions on the project with me, as well as great help.
+
+## Session information {-}
+```{r}
+sessionInfo()
+```
